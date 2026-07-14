@@ -15,13 +15,12 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center gap-3">
-                    <i class="fas fa-file-medical text-2xl"></i>
+                    <i id="admin-trigger-icon" class="fas fa-file-medical text-2xl cursor-pointer" role="button" tabindex="0" aria-label="Acceso administrativo"></i>
                     <span class="font-bold text-xl">Farmacovigilancia RAM</span>
                 </div>
                 <div class="flex space-x-4">
                     <button onclick="navigate('report')" class="nav-btn px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition" data-target="report">Nuevo Reporte</button>
                     <button onclick="navigate('board')" class="nav-btn px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition" data-target="board">Tablero Público</button>
-                    <button onclick="checkAdmin()" class="nav-btn px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 bg-blue-900 transition" data-target="admin"><i class="fas fa-lock mr-1"></i> Admin</button>
                 </div>
             </div>
         </div>

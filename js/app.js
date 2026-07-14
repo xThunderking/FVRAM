@@ -1,32 +1,28 @@
 // --- 1. DATOS Y LÓGICA CORE ---
 let reports = JSON.parse(localStorage.getItem('ram_reports'));
 
-if (!reports || reports.length === 0) {
-    reports = [{
-        id: '0126-001', // Dummy data adjusted to new format
-        patientName: 'Juan Pérez Gómez',
-        dob: '1985-05-15',
-        room: '402B',
-        drug: 'Ceftriaxona 1g',
-        reactionDate: '2023-10-25',
-        reactionTime: '14:30',
-        description: 'El paciente presentó rash cutáneo y dificultad leve para respirar 15 minutos después de iniciada la infusión.',
-        reporterName: 'Ana López',
-        reporterPosition: 'Enfermera',
-        timestamp: new Date().toISOString(),
-        status: 'Publicado',
-        service: '2do nivel',
-        analysis: 'Hipersensibilidad probable.',
-        rejectionReason: ''
-    }];
+if (!Array.isArray(reports)) {
+    reports = [];
     saveData();
 }
 
+const LEGACY_DEMO_REPORT_ID = '0126-001';
+
+function removeLegacyDemoReport() {
+    const before = reports.length;
+    reports = reports.filter(r => !(r && r.id === LEGACY_DEMO_REPORT_ID));
+    if (reports.length !== before) {
+        saveData();
+    }
+}
+
+removeLegacyDemoReport();
+
 let currentEditingId = null;
 let isAdminLoggedIn = false;
-let adminFailedAttempts = 0;
-let adminLockedUntil = 0;
 let isSubmitting = false;
+const ADMIN_PASSWORD = 'Farma2026';
+let adminAccessToken = false;
 
 function saveData() {
     localStorage.setItem('ram_reports', JSON.stringify(reports));
@@ -342,6 +338,14 @@ function abbreviateName(fullName) {
 
 // --- 4. NAVEGACIÓN Y SEGURIDAD SIMULADA ---
 function navigate(viewId) {
+    if (viewId === 'admin') {
+        if (!adminAccessToken) {
+            checkAdmin();
+            return;
+        }
+        adminAccessToken = false;
+    }
+
     document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
     document.getElementById(`view-${viewId}`).classList.remove('hidden');
 
@@ -355,32 +359,48 @@ function navigate(viewId) {
 }
 
 function checkAdmin() {
-    if (isAdminLoggedIn) return navigate('admin');
-    const now = Date.now();
-    if (now < adminLockedUntil) {
-        const seconds = Math.ceil((adminLockedUntil - now) / 1000);
-        alert(`Acceso temporalmente bloqueado. Intente de nuevo en ${seconds}s.`);
-        return;
-    }
-    const user = prompt('Acceso Restringido. Ingrese su USUARIO (Pista: user):');
-    if (user === null) return;
-    const pass = prompt('Ingrese su CONTRASEÑA (Pista: 123):');
+    const pass = prompt('Acceso restringido. Ingrese la clave:');
     if (pass === null) return;
 
-    if (user === 'user' && pass === '123') {
+    if (pass === ADMIN_PASSWORD) {
         isAdminLoggedIn = true;
-        adminFailedAttempts = 0;
+        adminAccessToken = true;
         navigate('admin');
     } else {
-        adminFailedAttempts += 1;
-        if (adminFailedAttempts >= 3) {
-            adminLockedUntil = Date.now() + 30000;
-            adminFailedAttempts = 0;
-            alert('Demasiados intentos fallidos. Acceso bloqueado 30 segundos.');
-            return;
-        }
-        alert('Credenciales incorrectas.');
+        alert('Clave incorrecta.');
     }
+}
+
+function setupAdminAccessTrigger() {
+    const trigger = document.getElementById('admin-trigger-icon');
+    if (!trigger) return;
+
+    let clickCount = 0;
+    let resetTimer = null;
+    const resetWindowMs = 900;
+
+    const registerClick = () => {
+        clickCount += 1;
+
+        if (resetTimer) clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+            clickCount = 0;
+        }, resetWindowMs);
+
+        if (clickCount >= 3) {
+            clickCount = 0;
+            if (resetTimer) clearTimeout(resetTimer);
+            checkAdmin();
+        }
+    };
+
+    trigger.addEventListener('click', registerClick);
+    trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            registerClick();
+        }
+    });
 }
 
 function logoutAdmin() {
@@ -608,4 +628,5 @@ function loadPublicBoard() {
 }
 
 initFormEnhancements();
+setupAdminAccessTrigger();
 navigate('report');
