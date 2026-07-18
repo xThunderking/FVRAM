@@ -1,23 +1,27 @@
 # Deploy coexistente: FVRAM en /fvram
 
-Este proyecto es frontend estatico (HTML/CSS/JS con localStorage).
-No necesita API Node para funcionar hoy.
+Este proyecto usa un frontend web, una API Node y MySQL. Los reportes se guardan
+centralmente y se comparten entre todos los equipos que abren la misma URL.
 
 Objetivo de acceso:
 - http://10.69.40.7/fvram/
 
-## 1) Levantar frontend en contenedor (puerto unico 8082)
+## 1) Levantar frontend, API y base de datos
 
 Desde /home/sistemas/FVRAM:
 
 ```bash
 chmod +x deploy/deploy-fvram.sh
-./deploy/deploy-fvram.sh
+FVRAM_ADMIN_PASSWORD='cambia-esta-clave' ./deploy/deploy-fvram.sh
 ```
 
 Esto crea:
 - contenedor web: fvram-web
-- contenedor db (opcional para futura API): fvram-db
+- contenedor API: fvram-api
+- contenedor db: fvram-db
+- volumen persistente: fvram-db-data
+
+No elimines el volumen `fvram-db-data`: contiene todos los reportes.
 
 ## 2) Configurar reverse proxy del host para ruta separada
 
@@ -79,36 +83,6 @@ docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' fvram-db
 
 Ambos deben devolver: unless-stopped
 
-## 4) Si algun dia agregas API Node (opcional)
-
-Usa servicio systemd dedicado, por ejemplo fvram-api:
-
-```ini
-[Unit]
-Description=FVRAM API
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/home/sistemas/fvram-api
-ExecStart=/usr/bin/node /home/sistemas/fvram-api/server.js
-Restart=always
-RestartSec=5
-User=sistemas
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Activacion:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now fvram-api
-systemctl is-enabled fvram-api
-```
-
 ## Notas
 
 - Si ya existe otro sistema en /, no lo toques; solo agrega location /fvram/.
@@ -119,6 +93,7 @@ systemctl is-enabled fvram-api
 
 ```bash
 curl -I http://127.0.0.1:8082
+curl http://127.0.0.1:8082/api/health
 curl -I http://10.69.40.7/fvram/
 ```
 

@@ -116,11 +116,7 @@ CREATE TABLE reports (
     FOREIGN KEY (reviewed_by) REFERENCES users(id),
 
   CONSTRAINT chk_reports_room_len
-    CHECK (CHAR_LENGTH(room) BETWEEN 1 AND 20),
-  CONSTRAINT chk_reports_dob_past
-    CHECK (patient_dob <= CURRENT_DATE),
-  CONSTRAINT chk_reports_reaction_not_future
-    CHECK (reaction_date <= CURRENT_DATE)
+    CHECK (CHAR_LENGTH(room) BETWEEN 1 AND 20)
 ) ENGINE=InnoDB;
 
 -- Búsqueda en panel admin/tablero
@@ -171,30 +167,6 @@ INSERT INTO cat_services (id, code, name, is_active) VALUES
 -- Corresponde a bcrypt de '123' con costo 10.
 INSERT INTO users (username, password_hash, full_name, role, is_active)
 VALUES ('user', '$2y$10$qYBf6v2lJfM8kYwWkQ4g7e9Qn5Ay5A3U9m5cNl7G1X8nU6lWf7A2W', 'Administrador Inicial', 'admin', 1);
-
--- Reporte de ejemplo similar al frontend actual
-INSERT INTO reports (
-  folio,
-  patient_name, patient_dob, room,
-  suspected_drug, reaction_date, reaction_time, reaction_description,
-  reporter_name, reporter_position,
-  status_id, service_id, analysis, rejection_reason,
-  submitted_at
-) VALUES (
-  '0126-001',
-  'Juan Pérez Gómez', '1985-05-15', '402B',
-  'Ceftriaxona 1g', '2023-10-25', '14:30:00',
-  'El paciente presentó rash cutáneo y dificultad leve para respirar 15 minutos después de iniciada la infusión.',
-  'Ana López', 'Enfermera',
-  2, 2, 'Hipersensibilidad probable.', NULL,
-  NOW()
-);
-
-INSERT INTO report_events (report_id, actor_user_id, event_type, new_status_id, notes)
-SELECT r.id, u.id, 'published', 2, 'Carga inicial de ejemplo'
-FROM reports r
-JOIN users u ON u.username = 'user'
-WHERE r.folio = '0126-001';
 
 -- =========================================================
 -- Vistas útiles para backend/API

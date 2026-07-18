@@ -1,31 +1,42 @@
 // --- 1. DATOS Y LÓGICA CORE ---
-let reports = JSON.parse(localStorage.getItem('ram_reports'));
-
-if (!Array.isArray(reports)) {
-    reports = [];
-    saveData();
-}
-
-const LEGACY_DEMO_REPORT_ID = '0126-001';
-
-function removeLegacyDemoReport() {
-    const before = reports.length;
-    reports = reports.filter(r => !(r && r.id === LEGACY_DEMO_REPORT_ID));
-    if (reports.length !== before) {
-        saveData();
-    }
-}
-
-removeLegacyDemoReport();
+let reports = [];
+const API_BASE = 'api';
 
 let currentEditingId = null;
 let isAdminLoggedIn = false;
 let isSubmitting = false;
-const ADMIN_PASSWORD = 'Farma2026';
 let adminAccessToken = false;
 
-function saveData() {
-    localStorage.setItem('ram_reports', JSON.stringify(reports));
+async function apiRequest(path, options = {}) {
+    const response = await fetch(`${API_BASE}${path}`, {
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const error = new Error(body.error || 'No fue posible conectar con el servidor.');
+        error.status = response.status;
+        throw error;
+    }
+    return body;
+}
+
+async function migrateLocalReports() {
+    const raw = localStorage.getItem('ram_reports');
+    if (!raw) return;
+    let localReports;
+    try { localReports = JSON.parse(raw); } catch { return; }
+    if (!Array.isArray(localReports) || localReports.length === 0) {
+        localStorage.removeItem('ram_reports');
+        return;
+    }
+    const result = await apiRequest('/admin/import', {
+        method: 'POST',
+        body: JSON.stringify({ reports: localReports })
+    });
+    localStorage.removeItem('ram_reports');
+    alert(`Migración terminada: ${result.imported} reporte(s) importado(s) y ${result.skipped} omitido(s).`);
 }
 
 function escapeHtml(value) {
@@ -106,7 +117,6 @@ function buildReportPayload() {
     if (pos === 'Otro') pos = document.getElementById('otherPosition').value;
 
     return {
-        id: generateId(),
         patientName: sanitizeText(document.getElementById('patientName').value),
         dob: document.getElementById('dob').value,
         room: sanitizeText(document.getElementById('room').value).toUpperCase(),
@@ -115,12 +125,7 @@ function buildReportPayload() {
         reactionTime: document.getElementById('reactionTime').value,
         description: sanitizeText(document.getElementById('description').value),
         reporterName: sanitizeText(document.getElementById('reporterName').value),
-        reporterPosition: sanitizeText(pos),
-        timestamp: new Date().toISOString(),
-        status: 'Pendiente',
-        service: '',
-        analysis: '',
-        rejectionReason: ''
+        reporterPosition: sanitizeText(pos)
     };
 }
 
@@ -295,25 +300,6 @@ function exportReportsJson() {
     URL.revokeObjectURL(a.href);
 }
 
-// --- 2. GENERADOR DE FOLIOS ---
-function generateId() {
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-
-    const currentYearReports = reports.filter(r => r.id && r.id.substring(2, 4) === yy);
-    let maxCount = 0;
-    currentYearReports.forEach(r => {
-        const parts = r.id.split('-');
-        if (parts.length === 2) {
-            const count = parseInt(parts[1], 10);
-            if (!isNaN(count) && count > maxCount) maxCount = count;
-        }
-    });
-    const nextCount = String(maxCount + 1).padStart(3, '0');
-    return `${mm}${yy}-${nextCount}`;
-}
-
 // --- 3. ABREVIATURA DE NOMBRES (Apellidos primero) ---
 function abbreviateName(fullName) {
     const parts = fullName.trim().split(/\s+/);
@@ -358,16 +344,18 @@ function navigate(viewId) {
     if (viewId === 'board') loadPublicBoard();
 }
 
-function checkAdmin() {
+async function checkAdmin() {
     const pass = prompt('Acceso restringido. Ingrese la clave:');
     if (pass === null) return;
 
-    if (pass === ADMIN_PASSWORD) {
+    try {
+        await apiRequest('/admin/login', { method: 'POST', body: JSON.stringify({ password: pass }) });
+        await migrateLocalReports();
         isAdminLoggedIn = true;
         adminAccessToken = true;
         navigate('admin');
-    } else {
-        alert('Clave incorrecta.');
+    } catch (error) {
+        alert(error.message);
     }
 }
 
@@ -403,8 +391,10 @@ function setupAdminAccessTrigger() {
     });
 }
 
-function logoutAdmin() {
+async function logoutAdmin() {
+    await apiRequest('/admin/logout', { method: 'POST' }).catch(() => {});
     isAdminLoggedIn = false;
+    reports = [];
     navigate('report');
 }
 
@@ -421,7 +411,7 @@ function toggleOtherPosition() {
     }
 }
 
-function submitReport(e) {
+async function submitReport(e) {
     e.preventDefault();
 
     if (isSubmitting) return;
@@ -437,23 +427,38 @@ function submitReport(e) {
     isSubmitting = true;
     setSubmitState(true);
 
-    reports.push(newReport);
-    saveData();
-    e.target.reset();
-    toggleOtherPosition();
-    clearFieldStates();
-    updateDescriptionCounter();
-    showFormFeedback('success', `Reporte enviado correctamente. Folio asignado: ${newReport.id}`);
-
-    isSubmitting = false;
-    setSubmitState(false);
+    try {
+        const result = await apiRequest('/reports', { method: 'POST', body: JSON.stringify(newReport) });
+        e.target.reset();
+        toggleOtherPosition();
+        clearFieldStates();
+        updateDescriptionCounter();
+        showFormFeedback('success', `Reporte enviado correctamente. Folio asignado: ${result.folio}`);
+    } catch (error) {
+        showFormFeedback('error', error.message);
+    } finally {
+        isSubmitting = false;
+        setSubmitState(false);
+    }
 }
 
 // --- 6. GESTIÓN ADMIN ---
-function loadAdminTable() {
+async function loadAdminTable() {
     const tbody = document.getElementById('admin-table-body');
     const searchTerm = document.getElementById('adminSearch').value.toLowerCase();
     const statusFilter = document.getElementById('adminStatusFilter').value;
+    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Consultando reportes...</td></tr>';
+
+    try {
+        reports = await apiRequest('/admin/reports');
+    } catch (error) {
+        if (error.status === 401) {
+            isAdminLoggedIn = false;
+            navigate('report');
+        }
+        tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-red-600">${escapeHtml(error.message)}</td></tr>`;
+        return;
+    }
     tbody.innerHTML = '';
 
     renderAdminStats();
@@ -540,7 +545,7 @@ function closeModal() {
     currentEditingId = null;
 }
 
-function saveAdminAnalysis() {
+async function saveAdminAnalysis() {
     const index = reports.findIndex(x => x.id === currentEditingId);
     if (index > -1) {
         const status = document.getElementById('admin-status').value;
@@ -557,24 +562,33 @@ function saveAdminAnalysis() {
             return;
         }
 
-        reports[index].status = status;
-        reports[index].service = service;
-        reports[index].analysis = analysis;
-        reports[index].rejectionReason = rejectionReason;
-
-        saveData();
-        closeModal();
-        loadAdminTable();
-        if (status === 'Publicado') loadPublicBoard();
+        try {
+            await apiRequest(`/admin/reports/${encodeURIComponent(currentEditingId)}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status, service, analysis, rejectionReason })
+            });
+            closeModal();
+            await loadAdminTable();
+        } catch (error) {
+            alert(error.message);
+        }
     }
 }
 
 // --- 7. TABLERO PUBLICO ---
-function loadPublicBoard() {
+async function loadPublicBoard() {
     const container = document.getElementById('board-container');
     const search = document.getElementById('boardSearch').value.toLowerCase();
     const serviceFilter = document.getElementById('boardServiceFilter').value;
     const sortBy = document.getElementById('boardSort')?.value || 'recent';
+    container.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">Consultando reportes...</div>';
+
+    try {
+        reports = await apiRequest('/reports/public');
+    } catch (error) {
+        container.innerHTML = `<div class="col-span-full text-center py-12 text-red-600">${escapeHtml(error.message)}</div>`;
+        return;
+    }
     container.innerHTML = '';
 
     const published = reports.filter(r => {

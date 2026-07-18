@@ -109,14 +109,18 @@ app.post('/reports', async (req, res, next) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       [folio, data.patientName, data.dob, data.room, data.drug, data.reactionDate, data.reactionTime, data.description, data.reporterName, data.reporterPosition]);
     await connection.execute("INSERT INTO report_events (report_id, event_type, new_status_id, notes) VALUES (?, 'created', 1, 'Reporte recibido desde formulario web')", [result.insertId]);
-    await connection.query("SELECT RELEASE_LOCK('fvram_folio')");
     await connection.commit();
     res.status(201).json({ folio });
   } catch (error) {
     if (connection) await connection.rollback().catch(() => {});
     if (error.message && !error.code) return res.status(400).json({ error: error.message });
     next(error);
-  } finally { if (connection) connection.release(); }
+  } finally {
+    if (connection) {
+      await connection.query("SELECT RELEASE_LOCK('fvram_folio')").catch(() => {});
+      connection.release();
+    }
+  }
 });
 
 app.get('/reports/public', async (_req, res, next) => {
@@ -132,20 +136,62 @@ app.post('/admin/login', (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Clave incorrecta.' });
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, Date.now() + SESSION_TTL_MS);
-  res.setHeader('Set-Cookie', `fvram_session=${token}; HttpOnly; SameSite=Strict; Path=/fvram/api; Max-Age=${SESSION_TTL_MS / 1000}`);
+  res.setHeader('Set-Cookie', `fvram_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
   res.json({ ok: true });
 });
 
 app.post('/admin/logout', requireAdmin, (req, res) => {
   const token = parseCookies(req).fvram_session;
   sessions.delete(token);
-  res.setHeader('Set-Cookie', 'fvram_session=; HttpOnly; SameSite=Strict; Path=/fvram/api; Max-Age=0');
+  res.setHeader('Set-Cookie', 'fvram_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
   res.json({ ok: true });
 });
 
 app.get('/admin/reports', requireAdmin, async (_req, res, next) => {
   try { const [rows] = await pool.query(`${reportSelect} ORDER BY r.submitted_at DESC`); res.json(rows.map(mapReport)); }
   catch (error) { next(error); }
+});
+
+app.post('/admin/import', requireAdmin, async (req, res, next) => {
+  const incoming = Array.isArray(req.body.reports) ? req.body.reports.slice(0, 500) : [];
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    let imported = 0;
+    let skipped = 0;
+    for (const item of incoming) {
+      try {
+        if (item.id === '0126-001' || !/^\d{4}-\d{3,}$/.test(String(item.id || ''))) { skipped++; continue; }
+        const data = validateNewReport(item);
+        const status = ['Pendiente', 'Publicado', 'Rechazado'].includes(item.status) ? item.status : 'Pendiente';
+        const service = clean(item.service, 80);
+        const analysis = clean(item.analysis, 5000);
+        const rejection = clean(item.rejectionReason, 500);
+        const submittedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(item.timestamp || ''))
+          ? String(item.timestamp).slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' ');
+        const [statusRows] = await connection.execute('SELECT id FROM cat_report_status WHERE label = ?', [status]);
+        const [serviceRows] = service ? await connection.execute('SELECT id FROM cat_services WHERE name = ? AND is_active = 1', [service]) : [[]];
+        if (status === 'Publicado' && !serviceRows.length) { skipped++; continue; }
+        const [result] = await connection.execute(`INSERT IGNORE INTO reports
+          (folio, patient_name, patient_dob, room, suspected_drug, reaction_date, reaction_time, reaction_description,
+           reporter_name, reporter_position, status_id, service_id, analysis, rejection_reason, submitted_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [item.id, data.patientName, data.dob, data.room, data.drug, data.reactionDate, data.reactionTime, data.description,
+           data.reporterName, data.reporterPosition, statusRows[0].id, serviceRows[0]?.id || null, analysis,
+           status === 'Rechazado' ? rejection : null, submittedAt]);
+        if (result.affectedRows) {
+          imported++;
+          await connection.execute("INSERT INTO report_events (report_id, event_type, new_status_id, notes) VALUES (?, 'created', ?, 'Importado desde almacenamiento local')", [result.insertId, statusRows[0].id]);
+        } else skipped++;
+      } catch { skipped++; }
+    }
+    await connection.commit();
+    res.json({ imported, skipped });
+  } catch (error) {
+    if (connection) await connection.rollback().catch(() => {});
+    next(error);
+  } finally { if (connection) connection.release(); }
 });
 
 app.put('/admin/reports/:folio', requireAdmin, async (req, res, next) => {
