@@ -1,0 +1,13 @@
+# Apache vhost snippet para publicar FVRAM en /fvram/
+# Requiere mod_proxy y mod_proxy_http habilitados.
+
+# Redirige /fvram a /fvram/
+RedirectMatch 301 ^/fvram$ /fvram/
+
+# Proxy inverso para el frontend docker en 8082
+ProxyPass /fvram/ http://127.0.0.1:8082/
+ProxyPassReverse /fvram/ http://127.0.0.1:8082/
+
+# Encabezados recomendados
+RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}
+RequestHeader set X-Forwarded-For %{REMOTE_ADDR}s

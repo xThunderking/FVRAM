@@ -1,0 +1,13 @@
+{
+  "name": "fvram-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "mysql2": "3.14.1"
+  }
+}
