@@ -179,10 +179,6 @@ function validateReportPayload(payload) {
         issues.push({ field: reactionDateField, message: 'La reacción no puede ocurrir antes del nacimiento.' });
     }
 
-    if (!payload.reactionTime) {
-        issues.push({ field: reactionTimeField, message: 'La hora de reacción es obligatoria.' });
-    }
-
     if (!payload.reporterPosition || payload.reporterPosition.length < 3) {
         issues.push({ field: positionField, message: 'Selecciona o especifica un puesto válido.' });
     }
@@ -195,7 +191,7 @@ function validateReportPayload(payload) {
     issueFields.forEach(field => setFieldState(field, 'error'));
 
     if (issues.length === 0) {
-        [patientNameField, dobField, roomField, drugField, reactionDateField, reactionTimeField, descriptionField, reporterNameField, positionField]
+        [patientNameField, dobField, roomField, drugField, reactionDateField, descriptionField, reporterNameField, positionField]
             .forEach(field => setFieldState(field, 'ok'));
     }
 

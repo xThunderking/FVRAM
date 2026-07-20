@@ -1,0 +1,10 @@
+[Unit]
+Description=Process FVRAM mail queue every minute
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+Unit=fvram-mail-worker.service
+
+[Install]
+WantedBy=timers.target

@@ -1,8 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
+const net = require('net');
+const tls = require('tls');
 const express = require('express');
 const mysql = require('mysql2/promise');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.disable('x-powered-by');
@@ -21,6 +24,75 @@ const pool = mysql.createPool({
 });
 
 const adminPassword = process.env.ADMIN_PASSWORD || '';
+const smtpUser = process.env.SMTP_USER || '';
+const smtpPassword = process.env.SMTP_PASSWORD || '';
+const reportRecipient = process.env.REPORT_EMAIL_TO || '';
+const smtpTlsFingerprint = String(process.env.SMTP_TLS_FINGERPRINT256 || '').toUpperCase();
+let pinnedSocketFactory = null;
+const smtpTransportOptions = {
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: String(process.env.SMTP_SECURE || 'true') === 'true',
+  auth: { user: smtpUser, pass: smtpPassword }
+};
+if (smtpTlsFingerprint) {
+  pinnedSocketFactory = (options, callback) => {
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      callback(error, value);
+    };
+    const validateTlsSocket = socket => {
+      const certificate = socket.getPeerCertificate();
+      const fingerprintMatches = certificate && String(certificate.fingerprint256).toUpperCase() === smtpTlsFingerprint;
+      if (!socket.authorized && !fingerprintMatches) {
+        socket.destroy();
+        finish(new Error('La huella del certificado SMTP no coincide.'));
+        return;
+      }
+      finish(null, { connection: socket, secured: true });
+    };
+    if (smtpTransportOptions.secure) {
+      const socket = tls.connect({ host: options.host, port: options.port, servername: options.host, rejectUnauthorized: false });
+      socket.once('secureConnect', () => validateTlsSocket(socket));
+      socket.once('error', finish);
+      return;
+    }
+
+    const plainSocket = net.connect(options.port, options.host);
+    let stage = 'greeting';
+    let response = '';
+    plainSocket.setEncoding('utf8');
+    plainSocket.setTimeout(15_000, () => finish(new Error('Tiempo agotado al negociar STARTTLS.')));
+    plainSocket.once('error', finish);
+    plainSocket.on('data', chunk => {
+      response += chunk;
+      if (stage === 'greeting' && /^220[ -]/.test(response)) {
+        response = '';
+        stage = 'ehlo';
+        plainSocket.write('EHLO fvram.local\r\n');
+      } else if (stage === 'ehlo' && /(?:^|\r\n)250 [^\r\n]*\r\n$/.test(response)) {
+        if (!/(?:^|\r\n)250[ -]STARTTLS(?:\r\n|$)/.test(response)) {
+          finish(new Error('El servidor SMTP no ofrece STARTTLS.'));
+          plainSocket.destroy();
+          return;
+        }
+        response = '';
+        stage = 'starttls';
+        plainSocket.write('STARTTLS\r\n');
+      } else if (stage === 'starttls' && /^220[ -]/.test(response)) {
+        plainSocket.removeAllListeners('data');
+        plainSocket.setTimeout(0);
+        const secureSocket = tls.connect({ socket: plainSocket, servername: options.host, rejectUnauthorized: false });
+        secureSocket.once('secureConnect', () => validateTlsSocket(secureSocket));
+        secureSocket.once('error', finish);
+      }
+    });
+  };
+}
+const mailer = smtpUser && smtpPassword ? nodemailer.createTransport(smtpTransportOptions) : null;
+if (mailer && pinnedSocketFactory) mailer.getSocket = pinnedSocketFactory;
 const sessions = new Map();
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
@@ -51,7 +123,7 @@ function mapReport(row) {
     room: row.room,
     drug: row.suspected_drug,
     reactionDate: row.reaction_date,
-    reactionTime: String(row.reaction_time).slice(0, 5),
+    reactionTime: row.reaction_time ? String(row.reaction_time).slice(0, 5) : '',
     description: row.reaction_description,
     reporterName: row.reporter_name,
     reporterPosition: row.reporter_position,
@@ -84,8 +156,78 @@ function validateNewReport(body) {
   if (!/^[A-Za-z0-9\-/]{1,20}$/.test(data.room)) throw new Error('Habitación inválida.');
   if (data.drug.length < 2 || data.description.length < 20 || data.reporterPosition.length < 3) throw new Error('Faltan datos obligatorios.');
   if (!datePattern.test(data.dob) || !datePattern.test(data.reactionDate) || data.dob > today || data.reactionDate > today || data.reactionDate < data.dob) throw new Error('Fechas inválidas.');
-  if (!timePattern.test(data.reactionTime)) throw new Error('Hora inválida.');
+  if (data.reactionTime && !timePattern.test(data.reactionTime)) throw new Error('Hora inválida.');
   return data;
+}
+
+function reportEmailContent(report) {
+  const value = v => String(v || 'No especificada');
+  const lines = [
+    `Folio: ${value(report.folio)}`,
+    `Paciente: ${value(report.patientName)}`,
+    `Fecha de nacimiento: ${value(report.dob)}`,
+    `Habitación: ${value(report.room)}`,
+    `Medicamento sospechoso: ${value(report.drug)}`,
+    `Fecha de la reacción: ${value(report.reactionDate)}`,
+    `Hora de la reacción: ${value(report.reactionTime)}`,
+    `Descripción: ${value(report.description)}`,
+    `Nombre de quien reporta: ${value(report.reporterName)}`,
+    `Puesto: ${value(report.reporterPosition)}`,
+    `Fecha de envío: ${value(report.timestamp)}`,
+    'Estado: Pendiente'
+  ];
+  return lines.join('\n');
+}
+
+async function sendPendingNotification(notificationId, report) {
+  if (!mailer || !reportRecipient) throw new Error('SMTP no configurado.');
+  await mailer.sendMail({
+    from: `Farmacovigilancia RAM <${smtpUser}>`,
+    to: reportRecipient,
+    subject: `Nuevo reporte RAM - ${report.folio}`,
+    text: reportEmailContent(report)
+  });
+  await pool.execute("UPDATE email_notifications SET status = 'sent', sent_at = NOW(), last_error = NULL WHERE id = ?", [notificationId]);
+}
+
+async function processEmailQueue() {
+  const [rows] = await pool.query(`SELECT n.id AS notification_id, r.folio, r.patient_name, r.patient_dob, r.room,
+    r.suspected_drug, r.reaction_date, r.reaction_time, r.reaction_description, r.reporter_name,
+    r.reporter_position, r.submitted_at
+    FROM email_notifications n JOIN reports r ON r.id = n.report_id
+    WHERE n.status = 'pending' AND n.next_attempt_at <= NOW() ORDER BY n.id LIMIT 10`);
+  for (const row of rows) {
+    const report = {
+      folio: row.folio, patientName: row.patient_name, dob: row.patient_dob, room: row.room,
+      drug: row.suspected_drug, reactionDate: row.reaction_date, reactionTime: row.reaction_time,
+      description: row.reaction_description, reporterName: row.reporter_name,
+      reporterPosition: row.reporter_position, timestamp: row.submitted_at
+    };
+    try {
+      await sendPendingNotification(row.notification_id, report);
+    } catch (error) {
+      await pool.execute(`UPDATE email_notifications SET attempts = attempts + 1, last_error = ?,
+        next_attempt_at = DATE_ADD(NOW(), INTERVAL LEAST(60, POW(2, attempts + 1)) MINUTE) WHERE id = ?`,
+        [String(error.message || error).slice(0, 500), row.notification_id]);
+      console.error(`Email notification ${row.notification_id} failed:`, error.message);
+    }
+  }
+}
+
+async function initializeDatabase() {
+  await pool.query('ALTER TABLE reports MODIFY reaction_time TIME NULL');
+  await pool.query(`CREATE TABLE IF NOT EXISTS email_notifications (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    report_id BIGINT UNSIGNED NOT NULL,
+    status ENUM('pending','sent') NOT NULL DEFAULT 'pending',
+    attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    last_error VARCHAR(500) NULL,
+    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id), UNIQUE KEY uk_email_report (report_id), KEY idx_email_pending (status, next_attempt_at),
+    CONSTRAINT fk_email_report FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB`);
 }
 
 app.get('/health', async (_req, res) => {
@@ -107,9 +249,13 @@ app.post('/reports', async (req, res, next) => {
     const [result] = await connection.execute(`INSERT INTO reports
       (folio, patient_name, patient_dob, room, suspected_drug, reaction_date, reaction_time, reaction_description, reporter_name, reporter_position, status_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [folio, data.patientName, data.dob, data.room, data.drug, data.reactionDate, data.reactionTime, data.description, data.reporterName, data.reporterPosition]);
+      [folio, data.patientName, data.dob, data.room, data.drug, data.reactionDate, data.reactionTime || null, data.description, data.reporterName, data.reporterPosition]);
     await connection.execute("INSERT INTO report_events (report_id, event_type, new_status_id, notes) VALUES (?, 'created', 1, 'Reporte recibido desde formulario web')", [result.insertId]);
+    const [notification] = await connection.execute('INSERT INTO email_notifications (report_id) VALUES (?)', [result.insertId]);
     await connection.commit();
+    await sendPendingNotification(notification.insertId, { folio, ...data, timestamp: new Date().toISOString() }).catch(error => {
+      console.error(`Initial email for ${folio} failed; it remains queued:`, error.message);
+    });
     res.status(201).json({ folio });
   } catch (error) {
     if (connection) await connection.rollback().catch(() => {});
@@ -220,4 +366,17 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: 'No fue posible completar la operación.' });
 });
 
-app.listen(3000, '0.0.0.0', () => console.log('FVRAM API listening on port 3000'));
+async function start() {
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try { await initializeDatabase(); break; }
+    catch (error) {
+      if (attempt === 30) throw error;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  setInterval(() => processEmailQueue().catch(console.error), 60_000).unref();
+  processEmailQueue().catch(console.error);
+  app.listen(3000, '0.0.0.0', () => console.log('FVRAM API listening on port 3000'));
+}
+
+start().catch(error => { console.error(error); process.exit(1); });

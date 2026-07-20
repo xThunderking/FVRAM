@@ -1,27 +1,26 @@
-# Deploy coexistente: FVRAM en /fvram
+# Producción FVRAM en PHP/MySQL local
 
-Este proyecto usa un frontend web, una API Node y MySQL. Los reportes se guardan
-centralmente y se comparten entre todos los equipos que abren la misma URL.
+Producción usa PHP 8.3 y una instancia MySQL local dedicada, sin contenedores.
+Apache conserva la URL compartida y reenvía `/fvram/` al servicio PHP local.
 
 Objetivo de acceso:
 - http://10.69.40.7/fvram/
 
-## 1) Levantar frontend, API y base de datos
+## 1) Levantar servicios locales
 
 Desde /home/sistemas/FVRAM:
 
 ```bash
-chmod +x deploy/deploy-fvram.sh
-FVRAM_ADMIN_PASSWORD='cambia-esta-clave' ./deploy/deploy-fvram.sh
+chmod +x deploy/deploy-host-fvram.sh
+./deploy/deploy-host-fvram.sh
 ```
 
-Esto crea:
-- contenedor web: fvram-web
-- contenedor API: fvram-api
-- contenedor db: fvram-db
-- volumen persistente: fvram-db-data
+Esto habilita servicios de usuario persistentes:
+- `fvram-mysql.service`: MySQL en `127.0.0.1:3308`.
+- `fvram-php.service`: frontend y API PHP en `127.0.0.1:8082`.
+- `fvram-mail-worker.timer`: procesa la cola de correo cada minuto.
 
-No elimines el volumen `fvram-db-data`: contiene todos los reportes.
+Los datos están en `runtime/mysql/`. No elimines ese directorio.
 
 ## 2) Configurar reverse proxy del host para ruta separada
 
@@ -74,14 +73,14 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 3) Checklist de arranque automatico
+## 3) Checklist de arranque automático
 
 ```bash
-docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' fvram-web
-docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' fvram-db
+systemctl --user is-active fvram-mysql fvram-php fvram-mail-worker.timer
+loginctl show-user sistemas -p Linger
 ```
 
-Ambos deben devolver: unless-stopped
+Los tres servicios deben indicar `active` y Linger debe ser `yes`.
 
 ## Notas
 

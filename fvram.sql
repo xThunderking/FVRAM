@@ -16,6 +16,7 @@ USE fvram;
 -- Limpieza (para reprovisionar en desarrollo)
 -- =========================================================
 DROP TABLE IF EXISTS report_events;
+DROP TABLE IF EXISTS email_notifications;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS cat_services;
@@ -78,7 +79,7 @@ CREATE TABLE reports (
   -- Datos del evento
   suspected_drug VARCHAR(150) NOT NULL,
   reaction_date DATE NOT NULL,
-  reaction_time TIME NOT NULL,
+  reaction_time TIME NULL,
   reaction_description TEXT NOT NULL,
 
   -- Notificador
@@ -144,6 +145,21 @@ CREATE TABLE report_events (
     FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
   CONSTRAINT fk_report_events_actor
     FOREIGN KEY (actor_user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE email_notifications (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id BIGINT UNSIGNED NOT NULL,
+  status ENUM('pending','sent') NOT NULL DEFAULT 'pending',
+  attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  last_error VARCHAR(500) NULL,
+  next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sent_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_email_report (report_id),
+  KEY idx_email_pending (status, next_attempt_at),
+  CONSTRAINT fk_email_report FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- =========================================================

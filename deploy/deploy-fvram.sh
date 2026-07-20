@@ -3,6 +3,11 @@ set -euo pipefail
 
 PROJECT_NAME="fvram"
 BASE_DIR="/home/sistemas/FVRAM"
+ENV_FILE="${BASE_DIR}/deploy/fvram-production.env"
+if [[ -f "${ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+fi
 WEB_CONTAINER="${PROJECT_NAME}-web"
 WEB_PORT="8082"
 API_CONTAINER="${PROJECT_NAME}-api"
@@ -16,6 +21,12 @@ DB_USER="fvram_user"
 DB_PASS="fvram_pass_2026"
 
 ADMIN_PASSWORD="${FVRAM_ADMIN_PASSWORD:-Farma2026}"
+SMTP_USER="${FVRAM_SMTP_USER:-}"
+SMTP_PASSWORD="${FVRAM_SMTP_PASSWORD:-}"
+REPORT_EMAIL_TO="${FVRAM_REPORT_EMAIL_TO:-}"
+SMTP_TLS_FINGERPRINT256="${FVRAM_SMTP_TLS_FINGERPRINT256:-}"
+SMTP_PORT="${FVRAM_SMTP_PORT:-465}"
+SMTP_SECURE="${FVRAM_SMTP_SECURE:-true}"
 
 echo "[1/5] Create application network and persistent database volume..."
 docker network create "${NETWORK}" >/dev/null 2>&1 || true
@@ -47,6 +58,12 @@ docker run -d \
   -e DB_USER="${DB_USER}" \
   -e DB_PASSWORD="${DB_PASS}" \
   -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+  -e SMTP_USER="${SMTP_USER}" \
+  -e SMTP_PASSWORD="${SMTP_PASSWORD}" \
+  -e REPORT_EMAIL_TO="${REPORT_EMAIL_TO}" \
+  -e SMTP_TLS_FINGERPRINT256="${SMTP_TLS_FINGERPRINT256}" \
+  -e SMTP_PORT="${SMTP_PORT}" \
+  -e SMTP_SECURE="${SMTP_SECURE}" \
   fvram-api:local
 
 echo "[4/5] Recreate web container on port ${WEB_PORT}..."

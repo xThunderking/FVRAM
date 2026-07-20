@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "express": "4.22.2",
-    "mysql2": "3.14.1"
+    "mysql2": "3.14.1",
+    "nodemailer": "9.0.3"
   }
 }

@@ -1,0 +1,14 @@
+[Unit]
+Description=FVRAM PHP application
+After=network.target fvram-mysql.service
+Requires=fvram-mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sistemas/FVRAM
+ExecStart=/usr/bin/php -d expose_php=0 -S 127.0.0.1:8082 -t /home/sistemas/FVRAM /home/sistemas/FVRAM/api-php/router.php
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

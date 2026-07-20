@@ -1,0 +1,14 @@
+<?php
+return [
+    'db_dsn' => 'mysql:host=127.0.0.1;port=3306;dbname=fvram;charset=utf8mb4',
+    'db_user' => 'fvram_user',
+    'db_password' => 'cambia-esta-clave',
+    'admin_password' => 'cambia-esta-clave',
+    'smtp_host' => 'smtp.gmail.com',
+    'smtp_port' => 587,
+    'smtp_user' => 'correo@gmail.com',
+    'smtp_password' => 'clave-de-aplicacion',
+    'report_email_to' => 'destinatario@ejemplo.com',
+    'worker_token' => 'secreto-aleatorio-local',
+    'email_enabled' => false,
+];

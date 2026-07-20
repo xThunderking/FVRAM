@@ -1,0 +1,7 @@
+[Unit]
+Description=FVRAM mail queue worker
+After=fvram-php.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl --fail --silent --show-error -X POST -H "X-FVRAM-Worker: fvram-mail-worker-2026-local" http://127.0.0.1:8082/api/internal/process-email

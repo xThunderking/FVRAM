@@ -1,0 +1,13 @@
+[Unit]
+Description=FVRAM MySQL local
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/mysqld --no-defaults --datadir=/home/sistemas/FVRAM/runtime/mysql --port=3308 --bind-address=127.0.0.1 --socket=/home/sistemas/FVRAM/runtime/run/mysql.sock --pid-file=/home/sistemas/FVRAM/runtime/run/mysql.pid --log-error=/home/sistemas/FVRAM/runtime/logs/mysql.log
+Restart=always
+RestartSec=5
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target
