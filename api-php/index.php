@@ -206,9 +206,15 @@ try {
         try {
             $pdo->query("SELECT GET_LOCK('fvram_folio',10)");
             $yy = date('y'); $mm = date('m');
-            $stmt = $pdo->prepare("SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(folio,'-',-1) AS UNSIGNED)),0)+1 FROM reports WHERE SUBSTRING(folio,3,2)=?");
+            $stmt = $pdo->prepare("SELECT CAST(SUBSTRING_INDEX(folio,'-',-1) AS UNSIGNED) AS num FROM reports WHERE SUBSTRING(folio,3,2)=? ORDER BY num");
             $stmt->execute([$yy]);
-            $folio = $mm . $yy . '-' . str_pad((string)$stmt->fetchColumn(), 3, '0', STR_PAD_LEFT);
+            $nextNumber = 1;
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $num) {
+                $current = (int)$num;
+                if ($current === $nextNumber) $nextNumber++;
+                if ($current > $nextNumber) break;
+            }
+            $folio = $mm . $yy . '-' . str_pad((string)$nextNumber, 3, '0', STR_PAD_LEFT);
             $stmt = $pdo->prepare("INSERT INTO reports (folio,patient_name,patient_dob,room,suspected_drug,reaction_date,reaction_time,reaction_description,reporter_name,reporter_position,status_id) VALUES (?,?,?,?,?,?,?,?,?,?,1)");
             $stmt->execute([$folio,$data['patientName'],$data['dob'],$data['room'],$data['drug'],$data['reactionDate'],$data['reactionTime'] ?: null,$data['description'],$data['reporterName'],$data['reporterPosition']]);
             $id = (int)$pdo->lastInsertId();
@@ -239,6 +245,28 @@ try {
         $stmt = db()->prepare("UPDATE reports r JOIN cat_report_status st ON st.label=? LEFT JOIN cat_services s ON s.name=? AND s.is_active=1 SET r.status_id=st.id,r.service_id=CASE WHEN ?='' THEN NULL ELSE s.id END,r.analysis=?,r.rejection_reason=CASE WHEN ?='Rechazado' THEN ? ELSE NULL END,r.reviewed_at=NOW() WHERE r.folio=? AND (?='' OR s.id IS NOT NULL)");
         $stmt->execute([$status,$service,$service,$analysis,$status,$reason,urldecode($match[1]),$service]);
         if (!$stmt->rowCount()) jsonResponse(['error' => 'Reporte o servicio no encontrado.'], 404);
+        jsonResponse(['ok' => true]);
+    }
+    if ($method === 'PATCH' && preg_match('#^/admin/reports/([^/]+)/folio$#', $path, $match)) {
+        requireAdmin();
+        $newFolio = strtoupper(clean(body()['newFolio'] ?? '', 20));
+        if (!preg_match('/^\d{4}-\d{3,}$/', $newFolio)) throw new InvalidArgumentException('Formato de folio inválido.');
+        if ($newFolio === urldecode($match[1])) jsonResponse(['ok' => true, 'unchanged' => true]);
+        try {
+            $stmt = db()->prepare('UPDATE reports SET folio=? WHERE folio=?');
+            $stmt->execute([$newFolio, urldecode($match[1])]);
+            if (!$stmt->rowCount()) jsonResponse(['error' => 'Reporte no encontrado.'], 404);
+            jsonResponse(['ok' => true]);
+        } catch (PDOException $e) {
+            if ((int)$e->getCode() === 23000) jsonResponse(['error' => 'El folio ya existe.'], 409);
+            throw $e;
+        }
+    }
+    if ($method === 'DELETE' && preg_match('#^/admin/reports/([^/]+)$#', $path, $match)) {
+        requireAdmin();
+        $stmt = db()->prepare('DELETE FROM reports WHERE folio=?');
+        $stmt->execute([urldecode($match[1])]);
+        if (!$stmt->rowCount()) jsonResponse(['error' => 'Reporte no encontrado.'], 404);
         jsonResponse(['ok' => true]);
     }
     jsonResponse(['error' => 'Ruta no encontrada.'], 404);

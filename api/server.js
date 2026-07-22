@@ -244,8 +244,14 @@ app.post('/reports', async (req, res, next) => {
     await connection.query("SELECT GET_LOCK('fvram_folio', 10)");
     const yy = String(new Date().getUTCFullYear()).slice(-2);
     const mm = String(new Date().getUTCMonth() + 1).padStart(2, '0');
-    const [numberRows] = await connection.query("SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(folio, '-', -1) AS UNSIGNED)), 0) + 1 AS next_number FROM reports WHERE SUBSTRING(folio, 3, 2) = ?", [yy]);
-    const folio = `${mm}${yy}-${String(numberRows[0].next_number).padStart(3, '0')}`;
+    const [numberRows] = await connection.query("SELECT CAST(SUBSTRING_INDEX(folio, '-', -1) AS UNSIGNED) AS num FROM reports WHERE SUBSTRING(folio, 3, 2) = ? ORDER BY num", [yy]);
+    let nextNumber = 1;
+    for (const row of numberRows) {
+      const current = Number(row.num || 0);
+      if (current === nextNumber) nextNumber += 1;
+      if (current > nextNumber) break;
+    }
+    const folio = `${mm}${yy}-${String(nextNumber).padStart(3, '0')}`;
     const [result] = await connection.execute(`INSERT INTO reports
       (folio, patient_name, patient_dob, room, suspected_drug, reaction_date, reaction_time, reaction_description, reporter_name, reporter_position, status_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
@@ -357,6 +363,28 @@ app.put('/admin/reports/:folio', requireAdmin, async (req, res, next) => {
           r.reviewed_at = NOW()
       WHERE r.folio = ? AND (? = '' OR s.id IS NOT NULL)`, [status, service, service, analysis, status, rejection, req.params.folio, service]);
     if (!result.affectedRows) return res.status(404).json({ error: 'Reporte o servicio no encontrado.' });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+app.patch('/admin/reports/:folio/folio', requireAdmin, async (req, res, next) => {
+  try {
+    const newFolio = clean(req.body.newFolio, 20).toUpperCase();
+    if (!/^\d{4}-\d{3,}$/.test(newFolio)) return res.status(400).json({ error: 'Formato de folio inválido.' });
+    if (newFolio === req.params.folio) return res.json({ ok: true, unchanged: true });
+    const [result] = await pool.execute('UPDATE reports SET folio = ? WHERE folio = ?', [newFolio, req.params.folio]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Reporte no encontrado.' });
+    res.json({ ok: true });
+  } catch (error) {
+    if (error && error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'El folio ya existe.' });
+    next(error);
+  }
+});
+
+app.delete('/admin/reports/:folio', requireAdmin, async (req, res, next) => {
+  try {
+    const [result] = await pool.execute('DELETE FROM reports WHERE folio = ?', [req.params.folio]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Reporte no encontrado.' });
     res.json({ ok: true });
   } catch (error) { next(error); }
 });

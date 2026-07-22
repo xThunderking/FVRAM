@@ -143,6 +143,7 @@
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                     <p id="admin-last-update" class="text-xs text-slate-500">Última actualización: --</p>
                     <div class="flex gap-2">
+                        <button onclick="exportReportsExcel()" class="action-btn bg-emerald-700 hover:bg-emerald-800 text-white"><i class="fas fa-file-excel mr-1"></i> Exportar Excel</button>
                         <button onclick="exportReportsJson()" class="action-btn bg-slate-700 hover:bg-slate-800 text-white"><i class="fas fa-file-export mr-1"></i> Exportar JSON</button>
                         <button onclick="loadAdminTable()" class="action-btn bg-blue-600 hover:bg-blue-700 text-white"><i class="fas fa-rotate-right mr-1"></i> Actualizar</button>
                     </div>
@@ -202,6 +203,12 @@
                             <option value="terapia">terapia</option>
                             <option value="urgencias">urgencias</option>
                             <option value="quirofano">quirofano</option>
+                        </select>
+                        <select id="boardMonthFilter" onchange="loadPublicBoard()" class="rounded border-gray-300 p-2 border text-sm">
+                            <option value="">Todos los meses</option>
+                        </select>
+                        <select id="boardYearFilter" onchange="loadPublicBoard()" class="rounded border-gray-300 p-2 border text-sm">
+                            <option value="">Todos los años</option>
                         </select>
                         <select id="boardSort" onchange="loadPublicBoard()" class="rounded border-gray-300 p-2 border text-sm">
                             <option value="recent">Más recientes</option>
@@ -331,15 +338,22 @@
                         <textarea id="admin-analysis" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="Escriba las lecciones aprendidas o el análisis que se mostrará..."></textarea>
                     </div>
 
-                    <div class="flex justify-end gap-3 mt-6">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-6">
+                        <div class="flex gap-2">
+                            <button onclick="promptAdjustFolio()" class="px-4 py-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 font-semibold"><i class="fas fa-hashtag mr-2"></i>Ajustar folio</button>
+                            <button onclick="deleteCurrentReport()" class="px-4 py-2 bg-rose-100 text-rose-800 rounded-lg hover:bg-rose-200 font-semibold"><i class="fas fa-trash mr-2"></i>Borrar reporte</button>
+                        </div>
+                        <div class="flex justify-end gap-3">
                         <button onclick="closeModal()" class="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-semibold">Cancelar</button>
                         <button onclick="saveAdminAnalysis()" class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold shadow-md"><i class="fas fa-save mr-2"></i>Guardar Dictamen</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="js/app.js" defer></script>
 </body>
 </html>

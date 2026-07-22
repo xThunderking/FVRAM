@@ -274,6 +274,61 @@ function renderBoardStats(items) {
     if (topDrugEl) topDrugEl.textContent = getTopByField(items, 'drug');
 }
 
+const BOARD_MONTHS = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+function getTimestampDateParts(timestamp) {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return null;
+    return {
+        month: date.getMonth() + 1,
+        year: date.getFullYear()
+    };
+}
+
+function populateBoardDateFilters(items) {
+    const monthSelect = document.getElementById('boardMonthFilter');
+    const yearSelect = document.getElementById('boardYearFilter');
+    if (!monthSelect || !yearSelect) return;
+
+    const selectedMonth = monthSelect.value;
+    const selectedYear = yearSelect.value;
+
+    const monthSet = new Set();
+    const yearSet = new Set();
+
+    items.forEach(item => {
+        const parts = getTimestampDateParts(item.timestamp);
+        if (!parts) return;
+        monthSet.add(parts.month);
+        yearSet.add(parts.year);
+    });
+
+    const availableMonths = Array.from(monthSet).sort((a, b) => a - b);
+    const availableYears = Array.from(yearSet).sort((a, b) => b - a);
+
+    monthSelect.innerHTML = '<option value="">Todos los meses</option>';
+    availableMonths.forEach(month => {
+        const option = document.createElement('option');
+        option.value = String(month);
+        option.textContent = BOARD_MONTHS[month - 1] || String(month);
+        monthSelect.appendChild(option);
+    });
+
+    yearSelect.innerHTML = '<option value="">Todos los años</option>';
+    availableYears.forEach(year => {
+        const option = document.createElement('option');
+        option.value = String(year);
+        option.textContent = String(year);
+        yearSelect.appendChild(option);
+    });
+
+    monthSelect.value = availableMonths.includes(Number(selectedMonth)) ? selectedMonth : '';
+    yearSelect.value = availableYears.includes(Number(selectedYear)) ? selectedYear : '';
+}
+
 function exportReportsJson() {
     const safeData = reports.map(r => ({
         ...r,
@@ -294,6 +349,89 @@ function exportReportsJson() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
+}
+
+function exportReportsExcel() {
+    if (!Array.isArray(reports) || reports.length === 0) {
+        alert('No hay reportes para exportar.');
+        return;
+    }
+
+    if (typeof XLSX === 'undefined') {
+        alert('La librería de Excel no está disponible. Recarga la página e inténtalo de nuevo.');
+        return;
+    }
+
+    const rows = reports.map(r => ({
+        Folio: r.id,
+        Estado: r.status,
+        Servicio: r.service || '',
+        FechaEnvio: new Date(r.timestamp).toLocaleString('es-MX'),
+        Paciente: r.patientName,
+        FechaNacimiento: r.dob,
+        Habitacion: r.room,
+        Medicamento: r.drug,
+        FechaReaccion: r.reactionDate,
+        HoraReaccion: r.reactionTime || '',
+        Descripcion: r.description,
+        Reportante: r.reporterName,
+        PuestoReportante: r.reporterPosition,
+        Analisis: r.analysis || '',
+        MotivoRechazo: r.rejectionReason || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Reportes RAM');
+    XLSX.writeFile(wb, `reportes-ram-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function isValidFolio(value) {
+    return /^\d{4}-\d{3,}$/.test(String(value || '').trim());
+}
+
+async function promptAdjustFolio() {
+    if (!currentEditingId) return;
+    const nextValue = prompt('Nuevo folio (formato MMYY-###):', currentEditingId);
+    if (nextValue === null) return;
+
+    const newFolio = sanitizeText(nextValue).toUpperCase();
+    if (!isValidFolio(newFolio)) {
+        alert('Formato de folio inválido. Usa MMYY-### (ejemplo: 0726-015).');
+        return;
+    }
+
+    if (newFolio === currentEditingId) {
+        alert('El folio no cambió.');
+        return;
+    }
+
+    try {
+        await apiRequest(`/admin/reports/${encodeURIComponent(currentEditingId)}/folio`, {
+            method: 'PATCH',
+            body: JSON.stringify({ newFolio })
+        });
+        closeModal();
+        await loadAdminTable();
+        alert(`Folio actualizado a ${newFolio}.`);
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function deleteCurrentReport() {
+    if (!currentEditingId) return;
+    const confirmed = confirm(`¿Seguro que deseas borrar el reporte ${currentEditingId}? Esta acción no se puede deshacer.`);
+    if (!confirmed) return;
+
+    try {
+        await apiRequest(`/admin/reports/${encodeURIComponent(currentEditingId)}`, { method: 'DELETE' });
+        closeModal();
+        await loadAdminTable();
+        alert('Reporte eliminado correctamente.');
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
 // --- 3. ABREVIATURA DE NOMBRES (Apellidos primero) ---
@@ -576,6 +714,8 @@ async function loadPublicBoard() {
     const container = document.getElementById('board-container');
     const search = document.getElementById('boardSearch').value.toLowerCase();
     const serviceFilter = document.getElementById('boardServiceFilter').value;
+    const monthFilter = document.getElementById('boardMonthFilter')?.value || '';
+    const yearFilter = document.getElementById('boardYearFilter')?.value || '';
     const sortBy = document.getElementById('boardSort')?.value || 'recent';
     container.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">Consultando reportes...</div>';
 
@@ -585,13 +725,18 @@ async function loadPublicBoard() {
         container.innerHTML = `<div class="col-span-full text-center py-12 text-red-600">${escapeHtml(error.message)}</div>`;
         return;
     }
+
+    populateBoardDateFilters(reports);
     container.innerHTML = '';
 
     const published = reports.filter(r => {
         const isPublished = r.status === 'Publicado';
         const matchesSearch = r.drug.toLowerCase().includes(search) || r.analysis.toLowerCase().includes(search);
         const matchesService = serviceFilter === '' || r.service === serviceFilter;
-        return isPublished && matchesSearch && matchesService;
+        const parts = getTimestampDateParts(r.timestamp);
+        const matchesMonth = monthFilter === '' || (parts && String(parts.month) === monthFilter);
+        const matchesYear = yearFilter === '' || (parts && String(parts.year) === yearFilter);
+        return isPublished && matchesSearch && matchesService && matchesMonth && matchesYear;
     });
 
     if (sortBy === 'oldest') {
@@ -622,6 +767,7 @@ async function loadPublicBoard() {
                 <p class="text-xs text-slate-500 mb-2"><i class="fas fa-calendar-day mr-1"></i>${escapeHtml(new Date(r.timestamp).toLocaleString('es-MX'))}</p>
                 <h3 class="font-bold text-lg text-gray-800 mb-1">Sospecha: <span class="text-red-700">${escapeHtml(r.drug)}</span></h3>
                 <p class="text-sm text-gray-500 mb-4 font-mono bg-gray-100 inline-block px-2 py-1 rounded"><i class="fas fa-user-secret mr-1"></i> Paciente: ${escapeHtml(abbreviateName(r.patientName))}</p>
+                <p class="text-xs text-blue-900 mb-4"><i class="fas fa-user-nurse mr-1"></i> Reacción reportada por: <span class="font-semibold">${escapeHtml(r.reporterPosition || 'No especificado')}</span></p>
 
                 <div class="bg-gray-50 p-3 rounded text-sm text-gray-700 italic border-l-2 border-gray-300 mb-4 line-clamp-3 hover:line-clamp-none transition-all">
                     "${escapeHtml(r.description)}"
