@@ -127,7 +127,8 @@ function mapReport(row) {
     description: row.reaction_description,
     reporterName: row.reporter_name,
     reporterPosition: row.reporter_position,
-    timestamp: `${String(row.submitted_at).replace(' ', 'T')}Z`,
+    // Se interpreta y muestra como hora local de Queretaro (UTC-06:00).
+    timestamp: `${String(row.submitted_at).replace(' ', 'T')}-06:00`,
     status: row.status_label,
     service: row.service_name || '',
     analysis: row.analysis || '',

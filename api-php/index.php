@@ -85,7 +85,7 @@ function mapReport(array $r): array {
         'reactionTime' => $r['reaction_time'] ? substr($r['reaction_time'], 0, 5) : '',
         'description' => $r['reaction_description'], 'reporterName' => $r['reporter_name'],
         'reporterPosition' => $r['reporter_position'],
-        'timestamp' => str_replace(' ', 'T', $r['submitted_at']) . 'Z',
+        'timestamp' => str_replace(' ', 'T', $r['submitted_at']) . '-06:00',
         'status' => $r['status_label'], 'service' => $r['service_name'] ?? '',
         'analysis' => $r['analysis'] ?? '', 'rejectionReason' => $r['rejection_reason'] ?? '',
     ];

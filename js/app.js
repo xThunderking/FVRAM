@@ -6,6 +6,7 @@ let currentEditingId = null;
 let isAdminLoggedIn = false;
 let isSubmitting = false;
 let adminAccessToken = false;
+const APP_TIMEZONE = 'America/Mexico_City';
 
 async function apiRequest(path, options = {}) {
     const response = await fetch(`${API_BASE}${path}`, {
@@ -232,7 +233,7 @@ function initFormEnhancements() {
 function updateLastUpdateLabel() {
     const el = document.getElementById('admin-last-update');
     if (!el) return;
-    el.textContent = `Última actualización: ${new Date().toLocaleString('es-MX')}`;
+    el.textContent = `Última actualización: ${formatDateTimeMX(new Date())}`;
 }
 
 function renderAdminStats() {
@@ -282,10 +283,33 @@ const BOARD_MONTHS = [
 function getTimestampDateParts(timestamp) {
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return null;
+
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: APP_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit'
+    }).formatToParts(date);
+
+    const monthStr = parts.find(p => p.type === 'month')?.value;
+    const yearStr = parts.find(p => p.type === 'year')?.value;
+    if (!monthStr || !yearStr) return null;
+
     return {
-        month: date.getMonth() + 1,
-        year: date.getFullYear()
+        month: Number(monthStr),
+        year: Number(yearStr)
     };
+}
+
+function formatDateTimeMX(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleString('es-MX', { timeZone: APP_TIMEZONE });
+}
+
+function formatDateMX(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleDateString('es-MX', { timeZone: APP_TIMEZONE });
 }
 
 function populateBoardDateFilters(items) {
@@ -366,7 +390,7 @@ function exportReportsExcel() {
         Folio: r.id,
         Estado: r.status,
         Servicio: r.service || '',
-        FechaEnvio: new Date(r.timestamp).toLocaleString('es-MX'),
+        FechaEnvio: formatDateTimeMX(r.timestamp),
         Paciente: r.patientName,
         FechaNacimiento: r.dob,
         Habitacion: r.room,
@@ -620,7 +644,7 @@ async function loadAdminTable() {
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap">
                 <div class="font-bold text-gray-900">${escapeHtml(r.id)}</div>
-                <div class="text-xs text-gray-500">${escapeHtml(new Date(r.timestamp).toLocaleDateString())}</div>
+                <div class="text-xs text-gray-500">${escapeHtml(formatDateMX(r.timestamp))}</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm text-gray-900">${escapeHtml(r.patientName)}</div>
@@ -661,9 +685,9 @@ function openModal(id) {
     document.getElementById('p-datetime').innerText = `${r.reactionDate} ${r.reactionTime}`;
     document.getElementById('p-reporter').innerText = r.reporterName;
     document.getElementById('p-position').innerText = r.reporterPosition;
-    document.getElementById('p-submission-time').innerText = new Date(r.timestamp).toLocaleString('es-MX');
+    document.getElementById('p-submission-time').innerText = formatDateTimeMX(r.timestamp);
     document.getElementById('p-desc').innerText = r.description;
-    document.getElementById('p-print-date').innerText = new Date().toLocaleString('es-MX');
+    document.getElementById('p-print-date').innerText = formatDateTimeMX(new Date());
 
     document.getElementById('admin-status').value = r.status || 'Pendiente';
     document.getElementById('admin-service').value = r.service || '';
@@ -764,7 +788,7 @@ async function loadPublicBoard() {
                     <span class="bg-blue-100 text-blue-900 text-xs px-2 py-1 rounded font-bold uppercase tracking-wider">${escapeHtml(r.service || 'Servicio no asignado')}</span>
                     <span class="text-xs text-gray-500 font-mono">${escapeHtml(r.id)}</span>
                 </div>
-                <p class="text-xs text-slate-500 mb-2"><i class="fas fa-calendar-day mr-1"></i>${escapeHtml(new Date(r.timestamp).toLocaleString('es-MX'))}</p>
+                <p class="text-xs text-slate-500 mb-2"><i class="fas fa-calendar-day mr-1"></i>${escapeHtml(formatDateTimeMX(r.timestamp))}</p>
                 <h3 class="font-bold text-lg text-gray-800 mb-1">Sospecha: <span class="text-red-700">${escapeHtml(r.drug)}</span></h3>
                 <p class="text-sm text-gray-500 mb-4 font-mono bg-gray-100 inline-block px-2 py-1 rounded"><i class="fas fa-user-secret mr-1"></i> Paciente: ${escapeHtml(abbreviateName(r.patientName))}</p>
                 <p class="text-xs text-blue-900 mb-4"><i class="fas fa-user-nurse mr-1"></i> Reacción reportada por: <span class="font-semibold">${escapeHtml(r.reporterPosition || 'No especificado')}</span></p>
