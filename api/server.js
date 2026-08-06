@@ -350,19 +350,21 @@ app.post('/admin/import', requireAdmin, async (req, res, next) => {
 app.put('/admin/reports/:folio', requireAdmin, async (req, res, next) => {
   try {
     const status = clean(req.body.status, 20);
+    const drug = clean(req.body.drug, 150);
     const service = clean(req.body.service, 80);
     const analysis = clean(req.body.analysis, 5000);
     const rejection = clean(req.body.rejectionReason, 500);
     if (!['Pendiente', 'Publicado', 'Rechazado'].includes(status)) return res.status(400).json({ error: 'Estado inválido.' });
+    if (drug.length < 2) return res.status(400).json({ error: 'Medicamento inválido.' });
     if (status === 'Publicado' && !service) return res.status(400).json({ error: 'Debes asignar un servicio.' });
     if (status === 'Rechazado' && rejection.length < 8) return res.status(400).json({ error: 'El motivo debe tener al menos 8 caracteres.' });
     const [result] = await pool.execute(`UPDATE reports r
       JOIN cat_report_status st ON st.label = ?
       LEFT JOIN cat_services s ON s.name = ? AND s.is_active = 1
-      SET r.status_id = st.id, r.service_id = CASE WHEN ? = '' THEN NULL ELSE s.id END,
+      SET r.status_id = st.id, r.suspected_drug = ?, r.service_id = CASE WHEN ? = '' THEN NULL ELSE s.id END,
           r.analysis = ?, r.rejection_reason = CASE WHEN ? = 'Rechazado' THEN ? ELSE NULL END,
           r.reviewed_at = NOW()
-      WHERE r.folio = ? AND (? = '' OR s.id IS NOT NULL)`, [status, service, service, analysis, status, rejection, req.params.folio, service]);
+      WHERE r.folio = ? AND (? = '' OR s.id IS NOT NULL)`, [status, drug, service, service, analysis, status, rejection, req.params.folio, service]);
     if (!result.affectedRows) return res.status(404).json({ error: 'Reporte o servicio no encontrado.' });
     res.json({ ok: true });
   } catch (error) { next(error); }

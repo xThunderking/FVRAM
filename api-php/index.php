@@ -238,12 +238,14 @@ try {
     if ($method === 'PUT' && preg_match('#^/admin/reports/([^/]+)$#', $path, $match)) {
         requireAdmin(); $input = body();
         $status = clean($input['status'] ?? '', 20); $service = clean($input['service'] ?? '', 80);
+        $drug = clean($input['drug'] ?? '', 150);
         $analysis = clean($input['analysis'] ?? '', 5000); $reason = clean($input['rejectionReason'] ?? '', 500);
         if (!in_array($status, ['Pendiente','Publicado','Rechazado'], true)) throw new InvalidArgumentException('Estado inválido.');
+        if (mb_strlen($drug) < 2) throw new InvalidArgumentException('Medicamento inválido.');
         if ($status === 'Publicado' && !$service) throw new InvalidArgumentException('Debes asignar un servicio.');
         if ($status === 'Rechazado' && mb_strlen($reason) < 8) throw new InvalidArgumentException('El motivo debe tener al menos 8 caracteres.');
-        $stmt = db()->prepare("UPDATE reports r JOIN cat_report_status st ON st.label=? LEFT JOIN cat_services s ON s.name=? AND s.is_active=1 SET r.status_id=st.id,r.service_id=CASE WHEN ?='' THEN NULL ELSE s.id END,r.analysis=?,r.rejection_reason=CASE WHEN ?='Rechazado' THEN ? ELSE NULL END,r.reviewed_at=NOW() WHERE r.folio=? AND (?='' OR s.id IS NOT NULL)");
-        $stmt->execute([$status,$service,$service,$analysis,$status,$reason,urldecode($match[1]),$service]);
+        $stmt = db()->prepare("UPDATE reports r JOIN cat_report_status st ON st.label=? LEFT JOIN cat_services s ON s.name=? AND s.is_active=1 SET r.status_id=st.id,r.suspected_drug=?,r.service_id=CASE WHEN ?='' THEN NULL ELSE s.id END,r.analysis=?,r.rejection_reason=CASE WHEN ?='Rechazado' THEN ? ELSE NULL END,r.reviewed_at=NOW() WHERE r.folio=? AND (?='' OR s.id IS NOT NULL)");
+        $stmt->execute([$status,$drug,$service,$service,$analysis,$status,$reason,urldecode($match[1]),$service]);
         if (!$stmt->rowCount()) jsonResponse(['error' => 'Reporte o servicio no encontrado.'], 404);
         jsonResponse(['ok' => true]);
     }

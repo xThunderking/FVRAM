@@ -305,6 +305,11 @@
                 <!-- Formulario de Dictamen Admin (No imprimible) -->
                 <div class="mt-6 border-t-2 pt-6 bg-gray-50 p-6 rounded-lg">
                     <h4 class="font-black text-gray-800 mb-4 uppercase tracking-wider text-sm"><i class="fas fa-gavel mr-2"></i>Formulario de Dictamen</h4>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-bold text-gray-700">Medicamento sospechoso</label>
+                        <input type="text" id="admin-drug" maxlength="150" oninput="document.getElementById('p-drug').innerText = this.value" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="Ej. Ceftriaxona 1g IV">
+                    </div>
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div>

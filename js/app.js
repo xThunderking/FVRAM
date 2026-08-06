@@ -688,6 +688,7 @@ function openModal(id) {
     document.getElementById('p-submission-time').innerText = formatDateTimeMX(r.timestamp);
     document.getElementById('p-desc').innerText = r.description;
     document.getElementById('p-print-date').innerText = formatDateTimeMX(new Date());
+    document.getElementById('admin-drug').value = r.drug || '';
 
     document.getElementById('admin-status').value = r.status || 'Pendiente';
     document.getElementById('admin-service').value = r.service || '';
@@ -707,9 +708,15 @@ async function saveAdminAnalysis() {
     const index = reports.findIndex(x => x.id === currentEditingId);
     if (index > -1) {
         const status = document.getElementById('admin-status').value;
+        const drug = sanitizeText(document.getElementById('admin-drug').value);
         const service = sanitizeText(document.getElementById('admin-service').value);
         const analysis = sanitizeText(document.getElementById('admin-analysis').value);
         const rejectionReason = sanitizeText(document.getElementById('admin-rejection').value);
+
+        if (drug.length < 2) {
+            alert('El medicamento debe tener al menos 2 caracteres.');
+            return;
+        }
 
         if (status === 'Publicado' && !service) {
             alert('Para publicar, debes asignar un servicio.');
@@ -723,7 +730,7 @@ async function saveAdminAnalysis() {
         try {
             await apiRequest(`/admin/reports/${encodeURIComponent(currentEditingId)}`, {
                 method: 'PUT',
-                body: JSON.stringify({ status, service, analysis, rejectionReason })
+                body: JSON.stringify({ status, drug, service, analysis, rejectionReason })
             });
             closeModal();
             await loadAdminTable();

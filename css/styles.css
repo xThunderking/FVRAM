@@ -110,12 +110,27 @@
 }
 
 @media print {
-    body { background: white; margin: 0; padding: 0; }
+    @page {
+        size: auto;
+        margin: 10mm;
+    }
+    html, body { background: white; margin: 0; padding: 0; height: auto; }
     body * { visibility: hidden; }
     #print-area, #print-area * { visibility: visible; }
     #print-area {
-        position: absolute; left: 0; top: 0; width: 100%;
-        background: white; border: none; box-shadow: none; padding: 20px;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0 !important;
+        max-width: none !important;
+        background: white;
+        border: none;
+        box-shadow: none;
+        padding: 8mm;
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
     .no-print { display: none !important; }
     .print-border { border: 1px solid #000 !important; }
