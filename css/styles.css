@@ -147,7 +147,7 @@
         padding: 0 !important;
     }
 
-    #admin-modal .p-6 > :not(#print-area) {
+    #admin-modal > div > .p-6 > :not(#print-area) {
         display: none !important;
     }
 
